@@ -1,0 +1,58 @@
+table { border-collapse: collapse; }
+th, td { padding: 6px 8px; text-align: left; }
+body{background:#f6f9fc}
+.card{border-radius:12px;box-shadow:0 6px 18px rgba(20,30,50,0.06)}
+.dt-row-hover tbody tr:hover{background:#f1f7ff;cursor:pointer}
+.small-muted{font-size:.9rem;color:#6c757d}
+
+/* Bootstrap Icons spinner helper */
+.bi-spin{
+    display:inline-block;
+    animation: bi-spin 1s linear infinite;
+}
+@keyframes bi-spin{
+    from{ transform: rotate(0deg); }
+    to{ transform: rotate(360deg); }
+}
+
+/* Radius control: collapse + fade so the row closes the gap when hidden */
+#radiusSearchCol{
+    overflow: hidden;
+    opacity: 1;
+    /* Width is set dynamically in JS to avoid extra gap when visible */
+    flex: 0 0 auto;
+    transition: opacity 160ms ease, max-width 160ms ease, flex-basis 160ms ease, padding-left 160ms ease, padding-right 160ms ease;
+}
+#radiusSearchCol.radius-hidden{
+    opacity: 0;
+    max-width: 0 !important;
+    flex: 0 0 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    pointer-events: none;
+}
+#radiusSearchCol.radius-gone{
+    display: none !important;
+}
+
+/* Keep the County label above the Select2 control */
+.county-field { align-self: flex-start; }
+.county-field .form-label { display: block; }
+.county-field .select2-container { display: block; }
+
+/* Keep the Trend column tight to the sparkline SVG size (140x40).
+   Use auto layout so the first column can expand for long names.
+   The surrounding .table-responsive will provide horizontal scrolling if needed. */
+.sparkline-table { table-layout: auto; min-width: 100%; width: max-content; }
+.sparkline-table th:nth-child(3),
+.sparkline-table td:nth-child(3) {
+    width: 140px;
+    max-width: 140px;
+    box-sizing: border-box;
+}
+.sparkline-table td:nth-child(3) { padding: 0; overflow: hidden; }
+.sparkline-table td:nth-child(3) svg { display: block; }
+
+/* Keep doctor names on a single line (no wrapping). */
+.sparkline-table th:first-child,
+.sparkline-table td:first-child { white-space: nowrap; }
