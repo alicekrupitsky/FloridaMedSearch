@@ -1,4 +1,4 @@
-# Florida Medical Doctor Search (WebForms)
+# Florida Medical Doctor Search by Alice Krupitsky
 
 Small ASP.NET WebForms site that lets users search practitioner utilization data in two modes:
 
