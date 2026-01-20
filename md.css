@@ -1,0 +1,75 @@
+body {
+    background: #f6f9fc;
+}
+
+/* Makes scrollIntoView land below the header */
+#resultsContainer {
+    scroll-margin-top: 90px;
+}
+
+.card {
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(20, 30, 50, 0.06);
+}
+
+.small-muted {
+    font-size: .9rem;
+    color: #6c757d;
+}
+
+/* Bootstrap Icons spinner helper */
+.bi-spin {
+    display: inline-block;
+    animation: bi-spin 1s linear infinite;
+}
+
+@keyframes bi-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Table styling */
+.table-hover tbody tr:hover {
+    background: #f1f7ff;
+    cursor: default;
+}
+
+/* DataTables row hover helper (matches outpatient page) */
+.dt-row-hover tbody tr:hover {
+    background: #f1f7ff;
+    cursor: pointer;
+}
+
+/* Selected license row */
+#licenseTable tbody tr.row-selected {
+    background: #e7f1ff;
+}
+
+/* DataTables Responsive: remove the default square “details” control in the first column */
+#licenseTable td.dtr-control:before {
+    display: none !important;
+}
+
+/* Star button */
+.doc-star-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.doc-star-btn i {
+    font-size: 1.05rem;
+}
+
+/* Tiny SVG trend sparklines */
+.sparkline {
+    width: 140px;
+    height: 40px;
+    vertical-align: middle;
+}

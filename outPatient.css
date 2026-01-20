@@ -56,3 +56,24 @@ body{background:#f6f9fc}
 /* Keep doctor names on a single line (no wrapping). */
 .sparkline-table th:first-child,
 .sparkline-table td:first-child { white-space: nowrap; }
+
+/* Star button */
+.doc-star-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    line-height: 1;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.cpt-star-btn{
+    border: none;
+    background: transparent;
+    padding: 0;
+    line-height: 1;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.doc-star-btn i { font-size: 1.05rem; }

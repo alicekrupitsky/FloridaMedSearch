@@ -9,20 +9,14 @@
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="landing.css?v=20260107" rel="stylesheet" />
+    <link href="Default.css?v=20260116" rel="stylesheet" />
+
+    <% Response.WriteFile(Server.MapPath("~/ga4-snippet.html")); %>
 </head>
 <body>
     <a class="visually-hidden-focusable" href="#main">Skip to main content</a>
 
-    <header class="border-bottom bg-white">
-        <nav class="navbar navbar-expand-lg" aria-label="Primary">
-            <div class="container py-2">
-                <a class="navbar-brand fw-semibold" href="/">
-                    <span class="text-primary">Florida</span> Medical Doctor Search
-                </a>
-            </div>
-        </nav>
-    </header>
+    <!--#INCLUDE FILE="i_header.aspx" -->
 
     <main id="main" class="flex-grow-1">
         <section class="hero">
@@ -36,19 +30,31 @@
                         </p>
 
                         <div class="d-flex flex-column flex-sm-row gap-2">
+
                             <a class="btn btn-outline-primary btn-lg" href="outPatient.aspx">
                                 <i class="bi bi-hospital me-2" aria-hidden="true"></i>
                                 Search Outpatient
                             </a>
+
                             <a class="btn btn-outline-primary btn-lg" href="inPatient.aspx">
                                 <i class="bi bi-building me-2" aria-hidden="true"></i>
                                 Search Inpatient
                             </a>
+
+                            <% if (Context.User.Identity.IsAuthenticated) { %>
+
+                            <a class="btn btn-outline-primary btn-lg" href="md.aspx">
+                                <i class="bi bi-person-vcard me-2" aria-hidden="true"></i>
+                                Search Practitioners
+                            </a>
+
+                            <% } %>
                         </div>
 
-                        <div class="mt-3 text-secondary small">
-                            Tip: You can enter multiple codes (comma separated) once inside.
-                        </div>
+                        <% if (Context.User.Identity.IsAuthenticated == false) { %>
+                            <div class="text-secondary small mt-2">Log in to see premium content.</div>
+                        <% } %>
+
                     </div>
 
                     <div class="col-12 col-lg-5">

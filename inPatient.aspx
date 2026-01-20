@@ -11,32 +11,14 @@
     <link href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" rel="stylesheet" />
     <link href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css" rel="stylesheet" />
     <link href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.dataTables.min.css" rel="stylesheet" />
-    <link href="inPatient.css?v=20260106" rel="stylesheet" />
+    <link href="inPatient.css?v=20260114" rel="stylesheet" />
+
+    <% Response.WriteFile(Server.MapPath("~/ga4-snippet.html")); %>
 </head>
-<body>
+<body data-is-auth="<%= (Context != null && Context.User != null && Context.User.Identity != null && Context.User.Identity.IsAuthenticated) ? "1" : "0" %>">
 <a class="visually-hidden-focusable" href="#main">Skip to main content</a>
 
-<header class="border-bottom bg-white">
-    <nav class="navbar navbar-expand-lg navbar-light bg-white" aria-label="Primary">
-        <div class="container py-2">
-            <a class="navbar-brand fw-semibold" href="Default.aspx">
-                <span class="text-primary">Florida</span> Medical Doctor Search
-            </a>
-
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#primaryNav" aria-controls="primaryNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-
-            <div class="collapse navbar-collapse" id="primaryNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link" href="Default.aspx">Home</a></li>
-                    <li class="nav-item"><a class="nav-link" href="outPatient.aspx">Outpatient</a></li>
-                    <li class="nav-item"><a class="nav-link active" aria-current="page" href="inPatient.aspx">Inpatient</a></li>
-                </ul>
-            </div>
-        </div>
-    </nav>
-</header>
+<!--#INCLUDE FILE="i_header.aspx" -->
 
 <main id="main" class="container py-4">
 <div class="d-flex align-items-center mb-3">
@@ -71,7 +53,7 @@
             <input type="text" name="icd" class="form-control" value="<%= Server.HtmlEncode(IcdRaw) %>" />
             <button id="openSearch" type="button" class="btn btn-outline-secondary" title="Open ICD-10 Procedure Search">ICD-10 Lookup</button>
         </div>
-        <div class="small-muted">Comma separated</div>
+        <div class="small-muted">Comma separated (e.g., 10E0XZZ, 10S0XZZ)</div>
     </div>
 
     <div class="col-auto">
@@ -111,6 +93,7 @@
                     <thead>
                         <tr>
                             <th></th>
+                            <th></th>
                             <th>ICD-10</th>
                             <th>Description</th>
                             <th>Use Count</th>
@@ -120,6 +103,10 @@
                 </table>
             </div>
             <div class="modal-footer">
+                <div class="form-check me-auto" id="icdStarOnlyWrap" style="display:none;">
+                    <input class="form-check-input" type="checkbox" value="1" id="icdStarOnly">
+                    <label class="form-check-label" for="icdStarOnly">Show starred only</label>
+                </div>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 <button type="button" class="btn btn-primary" id="applyIcdSelected">Apply Selected</button>
             </div>
@@ -139,6 +126,6 @@
 <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.colVis.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script src="inPatient.js?v=20260106"></script>
+<script src="inPatient.js?v=20260114"></script>
 </body>
 </html>

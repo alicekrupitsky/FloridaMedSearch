@@ -23,10 +23,53 @@ function buildActionUrl(action){
 
 $(function(){
     var modal = new bootstrap.Modal(document.getElementById('cptModal'));
+    var MED_IS_AUTH = !!(document.body && document.body.getAttribute('data-is-auth') === '1');
+
+    function formatUseCount(value){
+        var n = parseInt(value, 10);
+        if(isNaN(n)) n = 0;
+        try{ return n.toLocaleString('en-US'); }catch(e){ return String(n); }
+    }
+
+    function renderCptStarButton(isStarred, cptCode){
+        var starred = !!isStarred;
+        var icon = starred ? 'bi-star-fill' : 'bi-star';
+        var cls = starred ? 'text-warning' : 'text-muted';
+        var aria = starred ? 'Unstar CPT' : 'Star CPT';
+        var safeCpt = $('<div/>').text(cptCode || '').html();
+        return "<button type='button' class='cpt-star-btn' data-cpt='" + safeCpt + "' aria-label='" + aria + "' aria-pressed='" + (starred ? 'true' : 'false') + "'>" +
+            "<i class='bi " + icon + " " + cls + "' aria-hidden='true'></i>" +
+            "</button>";
+    }
+
+    function getSingleCptFromInput(){
+        var raw = ($('input[name="cpt"]').val() || '').toString().trim();
+        if(!raw) return '';
+        var parts = raw.split(/[\s,;]+/).filter(function(x){ return x && x.trim().length > 0; });
+        if(parts.length !== 1) return '';
+        return parts[0].trim();
+    }
+
+    function applySingleCptToTableSearch(table){
+        if(!table) return;
+        var code = getSingleCptFromInput();
+        if(!code) return;
+
+        // Only auto-fill when the search box is empty to avoid clobbering user input.
+        var $filterInput = $('div.dataTables_filter input', table.table().container());
+        var currentSearch = ($filterInput.val() || '').toString().trim();
+        if(currentSearch.length > 0) return;
+
+        table.search(code).draw();
+        $filterInput.val(code).trigger('focus');
+    }
 
     $('#openSearch').on('click', function(){
         modal.show();
         if(!$.fn.dataTable.isDataTable('#cptTable')){
+            // Show the star-only toggle only when stars are meaningful.
+            try{ $('#cptStarOnlyWrap').toggle(!!MED_IS_AUTH); }catch(_e){}
+
             var table = $('#cptTable').DataTable({
                 ajax: {
                     url: buildActionUrl('data'),
@@ -56,20 +99,17 @@ $(function(){
                 },
                 columns: [
                     { data: null, orderable:false, searchable:false, width:'4%', render: function(){ return '<input type="checkbox" class="cpt-select" />'; } },
+                    { data: 'isStarred', visible: MED_IS_AUTH, orderable:false, searchable:false, width:'4%', render: function(d, _t, row){ return renderCptStarButton(d, row && row.cptCode); } },
                     { data: 'cptCode', width: '8%', render: function(d){ return '<strong>'+d+'</strong>'; } },
                     { data: 'combinedDesc', width: '60%', render: function(d){ return '<div style="white-space:normal;word-break:break-word;">'+(d || '')+'</div>'; } },
-                    { data: 'use_count', width: '10%', className: 'dt-body-right', render: function(d){
-                        if(d == null || d === '') return '0';
-                        var n = parseInt(d, 10);
-                        if(isNaN(n)) return d;
-                        return n.toLocaleString('en-US');
-                    } }
+                    { data: 'use_count', width: '10%', className: 'dt-body-right', render: function(d){ return formatUseCount(d); } }
                 ],
                 responsive: false,
                 deferRender: true,
-                dom: "<'row'<'col-sm-6'B><'col-sm-6'f>>rt<'row'<'col-sm-6'i><'col-sm-6'p>>",
+                // Remove DataTables Buttons (Copy/CSV) from the CPT modal.
+                dom: "<'row'<'col-sm-6'><'col-sm-6'f>>rt<'row'<'col-sm-6'i><'col-sm-6'p>>",
                 pageLength: 30,
-                order: [[1,'asc']],
+                order: [[2,'asc']],
                 createdRow: function(row,data){
                     $(row).attr('data-cpt', data.cptCode);
                 }
@@ -101,10 +141,12 @@ $(function(){
                 if(settings.nTable.id !== 'cptTable') return true;
                 var selSec = $('#cptSection').val();
                 var selSub = $('#cptSubsection').val();
+                var starOnly = MED_IS_AUTH && ($('#cptStarOnly').is(':checked'));
                 var row = table.row(dataIndex).data();
                 if(!row) return true;
                 if(selSec && (row.section || '') !== selSec) return false;
                 if(selSub && (row.subsection || '') !== selSub) return false;
+                if(starOnly && !row.isStarred) return false;
                 return true;
             };
             cptTableFilter._cptTableFilter = true;
@@ -122,8 +164,68 @@ $(function(){
 
             $('#cptSubsection').on('change', function(){ table.draw(); });
 
+            $('#cptStarOnly').on('change', function(){ table.draw(); });
+
+            // Toggle CPT stars (authenticated users only)
+            $(document).on('click', '.cpt-star-btn', function(e){
+                e.preventDefault();
+                e.stopPropagation();
+                if(!MED_IS_AUTH) return;
+
+                var $btn = $(this);
+                var cpt = ($btn.attr('data-cpt') || '').toString().trim();
+                if(!cpt) return;
+
+                $btn.prop('disabled', true);
+                $.ajax({
+                    url: buildActionUrl('toggleCptStar'),
+                    type: 'POST',
+                    dataType: 'json',
+                    data: { cptCode: cpt },
+                    success: function(json){
+                        if(!json || json.error){
+                            console.error('toggleCptStar error', json);
+                            return;
+                        }
+
+                        var starred = !!json.isStarred;
+
+                        // Update icon + aria
+                        var $icon = $btn.find('i.bi');
+                        if($icon.length){
+                            $icon.removeClass('bi-star bi-star-fill text-muted text-warning');
+                            $icon.addClass(starred ? 'bi-star-fill text-warning' : 'bi-star text-muted');
+                        }
+                        $btn.attr('aria-pressed', starred ? 'true' : 'false');
+                        $btn.attr('aria-label', starred ? 'Unstar CPT' : 'Star CPT');
+
+                        // Update row model so starred-only filter works immediately.
+                        try{
+                            var tr = $btn.closest('tr');
+                            var rowApi = table.row(tr);
+                            var rowData = rowApi.data();
+                            if(rowData){
+                                rowData.isStarred = starred;
+                                rowApi.data(rowData);
+                            }
+                        }catch(_e){}
+
+                        if($('#cptStarOnly').is(':checked')){
+                            table.draw(false);
+                        }
+                    },
+                    error: function(xhr){
+                        console.error('toggleCptStar ajax error', xhr && xhr.status, xhr && xhr.responseText);
+                    },
+                    complete: function(){
+                        $btn.prop('disabled', false);
+                    }
+                });
+            });
+
             document.getElementById('cptModal').addEventListener('shown.bs.modal', function(){
                 $('#cptSection').val(''); $('#cptSubsection').val('');
+                applySingleCptToTableSearch(table);
             });
 
             $('#cptTable tbody').on('change', '.cpt-select', function(e){
@@ -138,10 +240,11 @@ $(function(){
                     var code = $(this).closest('tr').attr('data-cpt');
                     if(code) vals.push(code);
                 });
-                $('input[name="cpt"]').val(vals.join(','));
+                $('input[name="cpt"]').val(vals.join(',')).trigger('change');
                 modal.hide();
             });
         }else{
+            try{ $('#cptStarOnlyWrap').toggle(!!MED_IS_AUTH); }catch(_e){}
             $('#cptTable').DataTable().ajax.url(buildActionUrl('data')).load();
         }
     });
@@ -152,6 +255,145 @@ $(document).ready(function() {
         placeholder: 'Select counties',
         allowClear: true
     });
+
+    // Star doctors (premium users only; buttons are only rendered when authenticated)
+    $(document).on('click', '.doc-star-btn', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var $btn = $(this);
+        var lic = ($btn.attr('data-license') || '').toString().trim();
+        if (!lic) return;
+
+        $btn.prop('disabled', true);
+
+        $.ajax({
+            url: 'md.aspx?action=toggleStar',
+            type: 'POST',
+            dataType: 'json',
+            data: { license: lic },
+            success: function (json) {
+                if (!json || json.error) {
+                    console.error('toggleStar error', json);
+                    return;
+                }
+
+                var starred = !!json.isStarred;
+                var $icon = $btn.find('i.bi');
+                if ($icon.length) {
+                    $icon.removeClass('bi-star bi-star-fill text-muted text-warning');
+                    $icon.addClass(starred ? 'bi-star-fill text-warning' : 'bi-star text-muted');
+                }
+                $btn.attr('aria-pressed', starred ? 'true' : 'false');
+                $btn.attr('aria-label', starred ? 'Unstar doctor' : 'Star doctor');
+            },
+            error: function (xhr) {
+                console.error('toggleStar ajax error', xhr && xhr.status, xhr && xhr.responseText);
+            },
+            complete: function () {
+                $btn.prop('disabled', false);
+            }
+        });
+    });
+
+    // Persist County + Center ZIP selections.
+    (function(){
+        var KEY_COUNTY = 'MED.location.counties';
+        var KEY_CENTER_ZIP = 'MED.location.centerZip';
+        var KEY_RADIUS_MILES = 'MED.location.radiusMiles';
+        var KEY_CPT = 'MED.outpatient.cpt';
+
+        function hasLocalStorage(){
+            try{
+                var k = '__ls_test__';
+                localStorage.setItem(k, '1');
+                localStorage.removeItem(k);
+                return true;
+            }catch(e){
+                return false;
+            }
+        }
+
+        function readJsonArray(key){
+            try{
+                var raw = localStorage.getItem(key);
+                if(!raw) return [];
+                var val = JSON.parse(raw);
+                return Array.isArray(val) ? val : [];
+            }catch(e){
+                return [];
+            }
+        }
+
+        function saveSelections(){
+            if(!hasLocalStorage()) return;
+            try{
+                var counties = $('#county').val() || [];
+                localStorage.setItem(KEY_COUNTY, JSON.stringify(counties));
+
+                var centerZip = ($('#centerZip').val() || '').toString().trim();
+                if(centerZip){ localStorage.setItem(KEY_CENTER_ZIP, centerZip); }
+                else { localStorage.removeItem(KEY_CENTER_ZIP); }
+
+                var radiusMiles = ($('#radiusMiles').val() || '').toString().trim();
+                if(radiusMiles){ localStorage.setItem(KEY_RADIUS_MILES, radiusMiles); }
+                else { localStorage.removeItem(KEY_RADIUS_MILES); }
+
+                var cpt = ($('input[name="cpt"]').val() || '').toString().trim();
+                if(cpt){ localStorage.setItem(KEY_CPT, cpt); }
+                else { localStorage.removeItem(KEY_CPT); }
+            }catch(e){
+                // ignore
+            }
+        }
+
+        function loadSelections(){
+            if(!hasLocalStorage()) return;
+            try{
+                // Only hydrate if the user hasn't already selected values this request.
+                var currentCounties = $('#county').val();
+                if(!currentCounties || currentCounties.length === 0){
+                    var savedCounties = readJsonArray(KEY_COUNTY);
+                    if(savedCounties.length){
+                        $('#county').val(savedCounties).trigger('change');
+                    }
+                }
+
+                var $cz = $('#centerZip');
+                if($cz.length && (($cz.val() || '').toString().trim().length === 0)){
+                    var savedZip = localStorage.getItem(KEY_CENTER_ZIP);
+                    if(savedZip){ $cz.val(savedZip); }
+                }
+
+                var $rm = $('#radiusMiles');
+                if($rm.length){
+                    var savedRadius = localStorage.getItem(KEY_RADIUS_MILES);
+                    var currentRadius = ($rm.val() || '').toString().trim();
+                    var defaultRadius = ($rm.prop('defaultValue') || '').toString().trim();
+                    // Only hydrate when the current value is still the page default.
+                    if(savedRadius && currentRadius === defaultRadius){
+                        $rm.val(savedRadius).trigger('input');
+                    }
+                }
+
+                var $cpt = $('input[name="cpt"]');
+                if($cpt.length && (($cpt.val() || '').toString().trim().length === 0)){
+                    var savedCpt = localStorage.getItem(KEY_CPT);
+                    if(savedCpt){ $cpt.val(savedCpt); }
+                }
+            }catch(e){
+                // ignore
+            }
+        }
+
+        loadSelections();
+
+        $('#county').on('change', saveSelections);
+        $('#centerZip').on('input change blur', saveSelections);
+        $('#radiusMiles').on('input change', saveSelections);
+        $('input[name="cpt"]').on('input change blur', saveSelections);
+        $('#searchForm').on('submit', saveSelections);
+    })();
 
     function setResultsLoading(isLoading){
         var $container = $('#resultsContainer');

@@ -19,6 +19,32 @@ public partial class inPatient : System.Web.UI.Page
         return cs.ConnectionString;
     }
 
+    private int GetCurrentUserId()
+    {
+        try
+        {
+            if (Context == null || Context.User == null || Context.User.Identity == null) return 0;
+            if (!Context.User.Identity.IsAuthenticated) return 0;
+
+            var email = (Context.User.Identity.Name ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(email)) return 0;
+
+            using (var conn = new SqlConnection(ConnStr))
+            using (var cmd = new SqlCommand("select top 1 UserId from AppUser where Email = @Email", conn))
+            {
+                cmd.Parameters.AddWithValue("@Email", email);
+                conn.Open();
+                object o = cmd.ExecuteScalar();
+                if (o == null || o == DBNull.Value) return 0;
+                return Convert.ToInt32(o);
+            }
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     // Use fields (not auto-property initializers) for ASP.NET's C# 5 compiler compatibility.
     protected List<string> Counties = new List<string>();
     protected string[] CountiesSelected = new string[0];
@@ -33,6 +59,12 @@ public partial class inPatient : System.Web.UI.Page
 
     protected void Page_Load(object sender, EventArgs e)
     {
+        if (string.Equals(Request.QueryString["action"], "toggleProcStar", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteToggleProcStarJson();
+            return;
+        }
+
         if (string.Equals(Request.QueryString["action"], "data", StringComparison.OrdinalIgnoreCase))
         {
             WriteIcd10ProcedureDataJson();
@@ -124,21 +156,30 @@ public partial class inPatient : System.Web.UI.Page
 
         string debugSql = null;
 
+        int userId = 0;
+        if (Context.User.Identity.IsAuthenticated)
+            userId = GetCurrentUserId();
+
+        var starSelect = userId > 0 ? ", max(case when ud.UserId is null then 0 else 1 end) as IsStarred" : "";
+        var starJoin = userId > 0 ? " left join UserDoc ud on ud.UserId = @UserId and ud.LicenseNumber = d.LicenseNumber" : "";
+
         string sql = @"
-select d.FullName, count(*) cnt, 
+select d.FullName, d.LicenseNumber, count(*) cnt, 
 	sum(case when year = 2020 then 1 end) [2020],
 	sum(case when year = 2021 then 1 end) [2021],
 	sum(case when year = 2022 then 1 end) [2022],
 	sum(case when year = 2023 then 1 end) [2023],
 	sum(case when year = 2024 then 1 end) [2024],
 	'https://mqa-internet.doh.state.fl.us/MQASearchServices/HealthCareProviders/Details?LicInd=' + convert(varchar, d.LicInd) + '&ProCde=' + convert(varchar, d.ProCde) AS URL
+    " + starSelect + @"
 from InpProc a
-	join Zip_Code z on z.ZIPCODE = a.ZIPCODE
 	join lic_status d on d.LicenseNumber = a.OPER_PHYID
+	" + starJoin + @"
+	join Zip_Code z on z.ZIPCODE = d.ZIPCODE
 where a.OTHPROC in (" + BuildInListSql(icdList) + @")
     " + locationWhere + @"
-group by d.FullName, d.LicInd, d.ProCde
-order by 2 desc";
+group by d.FullName, d.LicenseNumber, d.LicInd, d.ProCde
+order by 3 desc";
 
 
         debugSql = sql;
@@ -152,11 +193,20 @@ order by 2 desc";
                 conn.Open();
                 using (var cmd = new SqlCommand(sql, conn))
                 {
+                    if (userId > 0)
+                        cmd.Parameters.Add("@UserId", System.Data.SqlDbType.Int).Value = userId;
+
                     using (var rdr = cmd.ExecuteReader())
                     {
                         html.Append("<div class='table-responsive'>");
                         html.Append("<table class='table table-striped table-bordered sparkline-table'>");
-                        html.Append("<thead><tr><th>Full Name</th><th>Count</th><th>Trend</th><th>2020</th><th>2021</th><th>2022</th><th>2023</th><th>2024</th></tr></thead><tbody>");
+                        html.Append("<thead><tr><th>Full Name</th>");
+
+                        if (Context.User.Identity.IsAuthenticated) { 
+                            html.Append("<th></th>");
+                        }
+
+                        html.Append("<th>Count</th><th>Trend</th><th>2020</th><th>2021</th><th>2022</th><th>2023</th><th>2024</th></tr></thead><tbody>");
 
                         bool any = false;
                         while (rdr.Read())
@@ -168,7 +218,17 @@ order by 2 desc";
                                 try { full = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(full.ToLowerInvariant()); } catch { }
                             }
 
+                            var licenseNumber = rdr["LicenseNumber"] != DBNull.Value ? rdr["LicenseNumber"].ToString() : "";
                             var url = rdr["URL"] != DBNull.Value ? rdr["URL"].ToString() : "";
+                                                        bool isStarred = false;
+                                                        if (userId > 0)
+                                                        {
+                                                            try
+                                                            {
+                                                                isStarred = (rdr["IsStarred"] != DBNull.Value && Convert.ToInt32(rdr["IsStarred"]) == 1);
+                                                            }
+                                                            catch { }
+                                                        }
                             var cnt = rdr["cnt"] != DBNull.Value ? rdr["cnt"].ToString() : "0";
                             var y2020 = rdr["2020"] != DBNull.Value ? rdr["2020"].ToString() : "0";
                             var y2021 = rdr["2021"] != DBNull.Value ? rdr["2021"].ToString() : "0";
@@ -214,25 +274,49 @@ order by 2 desc";
 
                             var svg = svgSb.ToString();
 
+
                             html.Append("<tr><td>");
-                            if (!string.IsNullOrEmpty(url))
+
+                            if (userId > 0 && !string.IsNullOrEmpty(licenseNumber))
                             {
-                                html.Append("<a href=\"").Append(Html(url)).Append("\" target=\"_blank\" rel=\"noopener\" class=\"text-decoration-none\">");
-                                html.Append(Html(full));
-                                html.Append(" <i class='bi bi-box-arrow-up-right' style='font-size:0.8em'></i></a>");
+                                var icon = isStarred ? "bi-star-fill text-warning" : "bi-star text-muted";
+                                var aria = isStarred ? "Unstar doctor" : "Star doctor";
+                                html.Append("<button type='button' class='doc-star-btn me-2' data-license='")
+                                    .Append(Html(licenseNumber))
+                                    .Append("' aria-label='")
+                                    .Append(Html(aria))
+                                    .Append("' aria-pressed='")
+                                    .Append(isStarred ? "true" : "false")
+                                    .Append("'><i class='bi ")
+                                    .Append(icon)
+                                    .Append("' aria-hidden='true'></i></button>");
                             }
-                            else
-                            {
-                                html.Append(Html(full));
+
+                            html.Append("<a href=\"").Append(Html(url)).Append("\" target=\"_blank\">");
+                            html.Append(Html(full));
+                            html.Append("</a></td>");
+
+                            if (Context.User.Identity.IsAuthenticated) { 
+
+                                var mdUrl = !string.IsNullOrEmpty(licenseNumber)
+                                    ? ("md.aspx?md=" + HttpUtility.UrlEncode(licenseNumber))
+                                    : "";
+
+                                html.Append("<td>");
+                                html.Append("<a href=\"").Append(Html(mdUrl)).Append("\" target=\"_blank\">");
+                                html.Append("<i class='bi bi-list' style='font-size:0.8em'></i>");
+                                html.Append("</a></td>");
+
                             }
-                            html.Append("</td><td>").Append(Html(cnt)).Append("</td><td>")
+
+                            html.Append("<td>").Append(Html(cnt)).Append("</td><td>")
                                 .Append(svg).Append("</td><td>").Append(Html(y2020)).Append("</td><td>").Append(Html(y2021))
                                 .Append("</td><td>").Append(Html(y2022)).Append("</td><td>").Append(Html(y2023)).Append("</td><td>")
                                 .Append(Html(y2024)).Append("</td></tr>");
                         }
 
                         if (!any)
-                            html.Append("<tr><td colspan='8'>No rows returned</td></tr>");
+                            html.Append("<tr><td colspan='9'>No rows returned</td></tr>");
 
                         html.Append("</tbody></table>");
                         html.Append("</div>");
@@ -289,24 +373,56 @@ order by 2 desc";
         var results = new List<Dictionary<string, object>>();
         try
         {
+            int userId = 0;
+            if (Context != null && Context.User != null && Context.User.Identity != null && Context.User.Identity.IsAuthenticated)
+                userId = GetCurrentUserId();
+
             using (var conn = new SqlConnection(ConnStr))
             {
                 conn.Open();
-                string sql = @"select Proc_Cd, Brutus_Desc, Proc_Category, Proc_Subcategory, use_count
+
+                string sql;
+                if (userId > 0)
+                {
+                    sql = @"select p.Proc_Cd, p.Brutus_Desc, p.Proc_Category, p.Proc_Subcategory, p.use_count,
+       case when up.UserId is null then 0 else 1 end as IsStarred
+from Procedures p
+left join UserProc up on up.UserId = @UserId and up.Proc_Cd = p.Proc_Cd
+where p.use_count > 0";
+                }
+                else
+                {
+                    sql = @"select Proc_Cd, Brutus_Desc, Proc_Category, Proc_Subcategory, use_count,
+       0 as IsStarred
 from Procedures
 where use_count > 0";
+                }
+
                 using (var cmd = new SqlCommand(sql, conn))
-                using (var rdr = cmd.ExecuteReader())
                 {
-                    while (rdr.Read())
+                    if (userId > 0)
+                        cmd.Parameters.Add("@UserId", System.Data.SqlDbType.Int).Value = userId;
+
+                    using (var rdr = cmd.ExecuteReader())
                     {
+                        while (rdr.Read())
+                        {
                         var d = new Dictionary<string, object>();
                         d["procCode"] = rdr["Proc_Cd"] == DBNull.Value ? "" : rdr["Proc_Cd"].ToString();
                         d["category"] = rdr["Proc_Category"] == DBNull.Value ? "" : rdr["Proc_Category"].ToString();
                         d["subcategory"] = rdr["Proc_Subcategory"] == DBNull.Value ? "" : rdr["Proc_Subcategory"].ToString();
                         d["description"] = rdr["Brutus_Desc"] == DBNull.Value ? "" : rdr["Brutus_Desc"].ToString();
                         d["use_count"] = rdr["use_count"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["use_count"]);
+                        try
+                        {
+                            d["isStarred"] = (rdr["IsStarred"] != DBNull.Value && Convert.ToInt32(rdr["IsStarred"]) == 1);
+                        }
+                        catch
+                        {
+                            d["isStarred"] = false;
+                        }
                         results.Add(d);
+                        }
                     }
                 }
             }
@@ -324,6 +440,119 @@ where use_count > 0";
         }
 
         Response.End();
+    }
+
+    private void WriteToggleProcStarJson()
+    {
+        Response.ContentType = "application/json";
+
+        if (Context == null || Context.User == null || Context.User.Identity == null || !Context.User.Identity.IsAuthenticated)
+        {
+            Response.StatusCode = 401;
+            WriteJson(new { error = true, message = "Not authenticated." });
+            Response.End();
+            return;
+        }
+
+        var proc = (Request.Form["procCode"] ?? Request.Form["proc"] ?? "").ToString();
+        proc = NormalizeProcCode(proc);
+        if (string.IsNullOrWhiteSpace(proc) || proc.Length > 7)
+        {
+            Response.StatusCode = 400;
+            WriteJson(new { error = true, message = "Invalid procedure code." });
+            Response.End();
+            return;
+        }
+
+        int userId = GetCurrentUserId();
+        if (userId <= 0)
+        {
+            Response.StatusCode = 401;
+            WriteJson(new { error = true, message = "User not found." });
+            Response.End();
+            return;
+        }
+
+        try
+        {
+            bool isStarred;
+            ToggleUserProc(userId, proc, out isStarred);
+            WriteJson(new { error = false, isStarred = isStarred });
+        }
+        catch (Exception ex)
+        {
+            Response.StatusCode = 500;
+            WriteJson(new { error = true, message = ex.Message });
+        }
+
+        Response.End();
+    }
+
+    private static string NormalizeProcCode(string input)
+    {
+        var raw = (input ?? "").Trim();
+        if (raw.Length == 0) return "";
+
+        var sb = new StringBuilder();
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char ch = raw[i];
+            if ((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'))
+                sb.Append(ch);
+        }
+
+        return sb.ToString().ToUpperInvariant();
+    }
+
+    private static void WriteJson(object obj)
+    {
+        var js = new JavaScriptSerializer();
+        js.MaxJsonLength = int.MaxValue;
+        HttpContext.Current.Response.Write(js.Serialize(obj));
+    }
+
+    private static void ToggleUserProc(int userId, string procCode, out bool isStarred)
+    {
+        isStarred = false;
+
+        using (var conn = new SqlConnection(ConnStr))
+        {
+            conn.Open();
+            using (var tx = conn.BeginTransaction())
+            {
+                bool exists;
+                using (var check = new SqlCommand("select top 1 1 from UserProc where UserId = @UserId and Proc_Cd = @Proc_Cd", conn, tx))
+                {
+                    check.Parameters.Add("@UserId", System.Data.SqlDbType.Int).Value = userId;
+                    check.Parameters.Add("@Proc_Cd", System.Data.SqlDbType.VarChar, 7).Value = procCode;
+                    var o = check.ExecuteScalar();
+                    exists = (o != null && o != DBNull.Value);
+                }
+
+                if (exists)
+                {
+                    using (var del = new SqlCommand("delete from UserProc where UserId = @UserId and Proc_Cd = @Proc_Cd", conn, tx))
+                    {
+                        del.Parameters.Add("@UserId", System.Data.SqlDbType.Int).Value = userId;
+                        del.Parameters.Add("@Proc_Cd", System.Data.SqlDbType.VarChar, 7).Value = procCode;
+                        del.ExecuteNonQuery();
+                    }
+                    isStarred = false;
+                }
+                else
+                {
+                    using (var ins = new SqlCommand("insert into UserProc (UserId, Proc_Cd) values (@UserId, @Proc_Cd)", conn, tx))
+                    {
+                        ins.Parameters.Add("@UserId", System.Data.SqlDbType.Int).Value = userId;
+                        ins.Parameters.Add("@Proc_Cd", System.Data.SqlDbType.VarChar, 7).Value = procCode;
+                        ins.ExecuteNonQuery();
+                    }
+                    isStarred = true;
+                }
+
+                tx.Commit();
+            }
+        }
     }
 
     private void PrepareZipRadiusFilter()
